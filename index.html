@@ -12,7 +12,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   /* ── 品牌色票 ── */
-  --brown:   #7f5b43;
+  --brown:   #3a5991;
   --blush:   #c79483;
   --mauve:   #a5908b;
   --olive:   #88794e;
@@ -21,9 +21,9 @@
   --pinkgrey:#e2d8cf;
 
   /* ── 桌子色（男方/女方/主桌用品牌色調） ── */
-  --groom:   #7f5b43;   /* 暖棕 男方 */
-  --groom-l: #ede0d4;
-  --groom-d: #5a3c28;
+  --groom:   #3a5991;   /* 暖棕 男方 */
+  --groom-l: #dce5f5;
+  --groom-d: #1e3560;
   --bride:   #c79483;   /* 玫瑰棕 女方 */
   --bride-l: #e2d8cf;
   --bride-d: #8a5840;
@@ -66,8 +66,8 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 /* ── Buttons ── */
 .btn{font-family:var(--font);font-size:13px;padding:6px 14px;border:1px solid var(--rule-md);border-radius:8px;background:var(--cream);color:var(--text);cursor:pointer;height:34px;white-space:nowrap;font-weight:500;transition:background .12s;}
 .btn:hover{background:#f0e8d0;}
-.btn.pri{background:#7f5b43;color:#fff;border-color:#5a3c28;}
-.btn.pri:hover{background:#5a3c28;}
+.btn.pri{background:#3a5991;color:#fff;border-color:#1e3560;}
+.btn.pri:hover{background:#1e3560;}
 .btn.sec{background:var(--bride-l);color:var(--bride-d);border-color:var(--bride);}
 .btn.cloud{background:#378ADD;color:#fff;border-color:#0C447C;}
 .btn.cloud:hover{background:#0C447C;}
@@ -219,7 +219,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 <div class="stats" id="stats"></div>
 
 <div class="legend">
-  <div class="leg"><div class="ld" style="background:#7f5b43"></div>男方賓客</div>
+  <div class="leg"><div class="ld" style="background:#3a5991"></div>男方賓客</div>
   <div class="leg"><div class="ld" style="background:#c79483"></div>女方賓客</div>
   <div class="leg"><div class="ld" style="background:#88794e"></div>素食者</div>
   <div class="leg"><div class="ld empty"></div>空位</div>
@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function() { startRealtimeSync(); 
 var VIEW = 'floor';
 var NID  = 10;
 var ZL   = { main:'主桌', groom:'男方區', bride:'女方區' };
-var ZC   = { main:'#E8A830', groom:'#E8623A', bride:'#E8A0B0' };
+var ZC   = { main:'#E8A830', groom:'#3a5991', bride:'#E8A0B0' };
 var STATUS_CYCLE = ['❓','✅','🔄'];
 
 // TABLE_POS stores {id: {col, row}} for drag positions in venue grid
@@ -667,8 +667,8 @@ function drawCanvas() {
 }
 
 function drawTable(t, cx, cy) {
-  var ZF  = { main:'#ede0a8', groom:'#ddd0c0', bride:'#ecddd8' };
-  var ZTX = { main:'#7a5a18', groom:'#5a3c28', bride:'#7a4838' };
+  var ZF  = { main:'#ede0a8', groom:'#dce5f5', bride:'#ecddd8' };
+  var ZTX = { main:'#7a5a18', groom:'#1e3560', bride:'#7a4838' };
   var zf  = ZF[t.zone]  || '#e0d8cc';
   var ztx = ZTX[t.zone] || '#4a3020';
   var R   = TABLE_R;
@@ -702,7 +702,7 @@ function drawTable(t, cx, cy) {
   ctx.textBaseline = 'alphabetic';
 
   // 座位圓：品牌色，無邊框，白字
-  var GC = { groom:'#7f5b43', bride:'#c79483', veg:'#88794e' };
+  var GC = { groom:'#3a5991', bride:'#c79483', veg:'#88794e' };
 
   t.guests.forEach(function(g, i) {
     var ang  = (i / t.seats) * Math.PI * 2 - Math.PI / 2;
