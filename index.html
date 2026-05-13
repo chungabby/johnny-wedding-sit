@@ -169,9 +169,9 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 .g-name{flex:1;font-size:13px;}
 .g-status{font-size:15px;cursor:pointer;border:none;background:none;padding:1px 3px;border-radius:4px;line-height:1;}
 .g-status:hover{background:rgba(0,0,0,0.06);}
-.cake-tog{width:26px;height:26px;border:1px solid var(--rule-md);border-radius:6px;background:var(--cream);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;}
-.cake-tog:hover{background:var(--main-l);}
-.cake-tog.on{background:var(--main-l);border-color:var(--main);}
+.cake-tog{width:26px;height:26px;border:1.5px solid var(--rule-md);border-radius:6px;background:var(--cream);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;opacity:0.3;}
+.cake-tog:hover{background:var(--main-l);opacity:0.7;}
+.cake-tog.on{background:#d6b777;border-color:#9a7010;box-shadow:0 0 0 2px #d6b77755;opacity:1;}
 .g-rm{font-size:15px;line-height:1;color:var(--hint);border:none;background:none;cursor:pointer;padding:3px 5px;border-radius:4px;}
 .g-rm:hover{color:#c0392b;background:#fdecea;}
 .add-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
@@ -521,9 +521,9 @@ function sc(l,v,c){ return '<div class="sc"><div class="sc-l">'+l+'</div><div cl
 
 // ── Canvas Floor View ───────────────────────────────────────────────────────
 var canvas, ctx;
-var CANVAS_W = 1000, CANVAS_H = 680;
+var CANVAS_W = 1100, CANVAS_H = 820;
 var dragId = null, dragOffX = 0, dragOffY = 0;
-var TABLE_R = 52; // circle radius for table
+var TABLE_R = 38;
 
 // Default positions for tables (grid-like initial layout)
 function getPos(t) {
@@ -532,27 +532,28 @@ function getPos(t) {
   var zTables = TABLES.filter(function(x){ return x.zone === t.zone; });
   var idx = zTables.indexOf(t);
   if (t.zone === 'main') {
-    return { x: CANVAS_W/2 - (zTables.length-1)*130/2 + idx*130, y: 100 };
+    return { x: CANVAS_W/2 - (zTables.length-1)*110/2 + idx*110, y: 90 };
   } else if (t.zone === 'groom') {
-    var col = idx % 3, row = Math.floor(idx/3);
-    return { x: 100 + col * 140, y: 240 + row * 160 };
+    var col = idx % 4, row = Math.floor(idx/4);
+    return { x: 60 + col * 110, y: 210 + row * 130 };
   } else {
-    var col = idx % 3, row = Math.floor(idx/3);
-    return { x: CANVAS_W - 100 - (2-col) * 140, y: 240 + row * 160 };
+    var col = idx % 4, row = Math.floor(idx/4);
+    return { x: CANVAS_W - 60 - (3-col) * 110, y: 210 + row * 130 };
   }
 }
 
 function initCanvas() {
   canvas = document.getElementById('venueCanvas');
   if (!canvas) return;
-  var dpr = window.devicePixelRatio || 1;
-  // Physical pixels = logical * dpr → sharp on Retina
+  var dpr = Math.min(window.devicePixelRatio || 1, 3);
   canvas.width  = CANVAS_W * dpr;
   canvas.height = CANVAS_H * dpr;
   canvas.style.width  = '100%';
   canvas.style.height = 'auto';
   ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('mousemove', onMouseMove);
@@ -683,22 +684,22 @@ function drawTable(t, cx, cy) {
 
   // 桌名
   ctx.fillStyle = ztx;
-  ctx.font = 'bold 14px Chiron GoRound TC,Noto Sans TC,sans-serif';
+  ctx.font = 'bold 11px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(t.name, cx, t.label ? cy - 13 : cy - 5);
+  ctx.fillText(t.name, cx, t.label ? cy - 10 : cy - 4);
 
   // 座位牌名稱
   if (t.label) {
     ctx.fillStyle = ztx + 'bb';
-    ctx.font = '11px Chiron GoRound TC,Noto Sans TC,sans-serif';
-    ctx.fillText(t.label, cx, cy + 5);
+    ctx.font = '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
+    ctx.fillText(t.label, cx, cy + 4);
   }
 
   // 人數
   ctx.fillStyle = ztx + 'aa';
-  ctx.font = '11px Chiron GoRound TC,Noto Sans TC,sans-serif';
-  ctx.fillText(t.guests.length + '/' + t.seats + ' 人', cx, t.label ? cy + 20 : cy + 10);
+  ctx.font = '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
+  ctx.fillText(t.guests.length + '/' + t.seats + ' 人', cx, t.label ? cy + 15 : cy + 8);
   ctx.textBaseline = 'alphabetic';
 
   // 座位圓：品牌色，無邊框，白字
@@ -714,10 +715,10 @@ function drawTable(t, cx, cy) {
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.fillStyle = '#fffffd';
-    ctx.font = 'bold ' + Math.round(sR * 0.92) + 'px Chiron GoRound TC,Noto Sans TC,sans-serif';
+    ctx.font = 'bold ' + Math.round(sR * 0.88) + 'px Chiron GoRound TC,Noto Sans TC,sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(g.name.slice(0, 1), sx, sy);
+    ctx.fillText(g.name.slice(0, 1), sx, sy + 0.5);
     ctx.textBaseline = 'alphabetic';
   });
 
@@ -781,7 +782,7 @@ function lpanel(t) {
       :'<div class="no-cake-hint">點 🎁 指定哪位賓客領喜餅</div>')
     +'<div class="add-row">'
       +'<input class="gi" id="gin_'+t.id+'" type="text" placeholder="賓客姓名" data-action="guest-input" data-id="'+t.id+'"/>'
-      +'<select id="gis_'+t.id+'"><option value="g">男方</option><option value="b">女方</option></select>'
+      +'<select id="gis_'+t.id+'"><option value="g"'+(t.zone==='bride'?'':'  selected')+'>男方</option><option value="b"'+(t.zone==='bride'?' selected':'')+'>女方</option></select>'
       +'<select id="giv_'+t.id+'"><option value="0">葷食</option><option value="1">素食</option></select>'
       +'<button class="add-g-btn" data-action="add-guest" data-id="'+t.id+'">+ 加入</button>'
     +'</div>'
