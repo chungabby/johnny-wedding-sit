@@ -164,14 +164,18 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 .lp-del{font-family:var(--font);font-size:12px;color:var(--hint);border:1px solid var(--rule-md);background:none;cursor:pointer;padding:3px 8px;border-radius:6px;white-space:nowrap;}
 .lp-del:hover{color:#c0392b;background:#fdecea;border-color:#f09595;}
 .g-rows{border-top:1px solid var(--rule);margin-bottom:8px;}
-.g-row{display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid var(--rule);}
+.g-row{display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid var(--rule);transition:background .1s;}
 .g-row:last-child{border-bottom:none;}
+.g-row.drag-over{background:var(--groom-l);border-radius:6px;}
+.g-row.dragging{opacity:0.4;}
 .g-name{flex:1;font-size:13px;}
+.drag-handle{color:var(--hint);cursor:grab;padding:2px 4px;font-size:13px;flex-shrink:0;user-select:none;}
+.drag-handle:active{cursor:grabbing;}
 .g-status{font-size:15px;cursor:pointer;border:none;background:none;padding:1px 3px;border-radius:4px;line-height:1;}
 .g-status:hover{background:rgba(0,0,0,0.06);}
-.cake-tog{width:26px;height:26px;border:1.5px solid var(--rule-md);border-radius:6px;background:var(--cream);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;opacity:0.3;}
-.cake-tog:hover{background:var(--main-l);opacity:0.7;}
-.cake-tog.on{background:#d6b777;border-color:#9a7010;box-shadow:0 0 0 2px #d6b77755;opacity:1;}
+.cake-tog{width:26px;height:26px;border:1px solid var(--rule-md);border-radius:6px;background:var(--cream);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .12s;}
+.cake-tog:hover{background:var(--main-l);}
+.cake-tog.on{background:var(--main-l);border-color:var(--main);}
 .g-rm{font-size:15px;line-height:1;color:var(--hint);border:none;background:none;cursor:pointer;padding:3px 5px;border-radius:4px;}
 .g-rm:hover{color:#c0392b;background:#fdecea;}
 .add-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
@@ -396,6 +400,57 @@ document.addEventListener('keydown', function(e) {
     addGuest(+e.target.dataset.id);
 });
 
+// ── 清單拖移排序 ─────────────────────────────────────────────────────────────
+var dragSrc = null; // { id, idx }
+
+document.addEventListener('dragstart', function(e) {
+  var row = findRow(e.target);
+  if (!row || row.dataset.action !== 'drag-row') return;
+  dragSrc = { id: +row.dataset.id, idx: +row.dataset.idx };
+  row.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+});
+
+document.addEventListener('dragend', function(e) {
+  var row = findRow(e.target);
+  if (row) row.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(function(el){ el.classList.remove('drag-over'); });
+  dragSrc = null;
+});
+
+document.addEventListener('dragover', function(e) {
+  var row = findRow(e.target);
+  if (!row || row.dataset.action !== 'drag-row') return;
+  if (!dragSrc || +row.dataset.id !== dragSrc.id) return;
+  e.preventDefault();
+  document.querySelectorAll('.drag-over').forEach(function(el){ el.classList.remove('drag-over'); });
+  row.classList.add('drag-over');
+});
+
+document.addEventListener('drop', function(e) {
+  var row = findRow(e.target);
+  if (!row || row.dataset.action !== 'drag-row') return;
+  if (!dragSrc) return;
+  var destId  = +row.dataset.id;
+  var destIdx = +row.dataset.idx;
+  if (destId !== dragSrc.id || destIdx === dragSrc.idx) return;
+  e.preventDefault();
+  var t = TABLES.find(function(t){ return t.id === dragSrc.id; });
+  if (!t) return;
+  var moved = t.guests.splice(dragSrc.idx, 1)[0];
+  t.guests.splice(destIdx, 0, moved);
+  render(); saveToFirebase();
+});
+
+function findRow(el) {
+  for (var i = 0; i < 5; i++) {
+    if (!el || el === document.body) return null;
+    if (el.dataset && el.dataset.action === 'drag-row') return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 // ── Data actions ─────────────────────────────────────────────────────────────
 function doDelTable(id) {
   if (!confirm('確定刪除這張桌子？')) return;
@@ -521,9 +576,9 @@ function sc(l,v,c){ return '<div class="sc"><div class="sc-l">'+l+'</div><div cl
 
 // ── Canvas Floor View ───────────────────────────────────────────────────────
 var canvas, ctx;
-var CANVAS_W = 1100, CANVAS_H = 820;
+var CANVAS_W = 1000, CANVAS_H = 680;
 var dragId = null, dragOffX = 0, dragOffY = 0;
-var TABLE_R = 38;
+var TABLE_R = 52; // circle radius for table
 
 // Default positions for tables (grid-like initial layout)
 function getPos(t) {
@@ -532,28 +587,27 @@ function getPos(t) {
   var zTables = TABLES.filter(function(x){ return x.zone === t.zone; });
   var idx = zTables.indexOf(t);
   if (t.zone === 'main') {
-    return { x: CANVAS_W/2 - (zTables.length-1)*110/2 + idx*110, y: 90 };
+    return { x: CANVAS_W/2 - (zTables.length-1)*130/2 + idx*130, y: 100 };
   } else if (t.zone === 'groom') {
-    var col = idx % 4, row = Math.floor(idx/4);
-    return { x: 60 + col * 110, y: 210 + row * 130 };
+    var col = idx % 3, row = Math.floor(idx/3);
+    return { x: 100 + col * 140, y: 240 + row * 160 };
   } else {
-    var col = idx % 4, row = Math.floor(idx/4);
-    return { x: CANVAS_W - 60 - (3-col) * 110, y: 210 + row * 130 };
+    var col = idx % 3, row = Math.floor(idx/3);
+    return { x: CANVAS_W - 100 - (2-col) * 140, y: 240 + row * 160 };
   }
 }
 
 function initCanvas() {
   canvas = document.getElementById('venueCanvas');
   if (!canvas) return;
-  var dpr = Math.min(window.devicePixelRatio || 1, 3);
+  var dpr = window.devicePixelRatio || 1;
+  // Physical pixels = logical * dpr → sharp on Retina
   canvas.width  = CANVAS_W * dpr;
   canvas.height = CANVAS_H * dpr;
   canvas.style.width  = '100%';
   canvas.style.height = 'auto';
   ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
 
   canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('mousemove', onMouseMove);
@@ -684,22 +738,22 @@ function drawTable(t, cx, cy) {
 
   // 桌名
   ctx.fillStyle = ztx;
-  ctx.font = 'bold 11px Chiron GoRound TC,Noto Sans TC,sans-serif';
+  ctx.font = 'bold 14px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(t.name, cx, t.label ? cy - 10 : cy - 4);
+  ctx.fillText(t.name, cx, t.label ? cy - 13 : cy - 5);
 
   // 座位牌名稱
   if (t.label) {
     ctx.fillStyle = ztx + 'bb';
-    ctx.font = '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
-    ctx.fillText(t.label, cx, cy + 4);
+    ctx.font = '11px Chiron GoRound TC,Noto Sans TC,sans-serif';
+    ctx.fillText(t.label, cx, cy + 5);
   }
 
   // 人數
   ctx.fillStyle = ztx + 'aa';
-  ctx.font = '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
-  ctx.fillText(t.guests.length + '/' + t.seats + ' 人', cx, t.label ? cy + 15 : cy + 8);
+  ctx.font = '11px Chiron GoRound TC,Noto Sans TC,sans-serif';
+  ctx.fillText(t.guests.length + '/' + t.seats + ' 人', cx, t.label ? cy + 20 : cy + 10);
   ctx.textBaseline = 'alphabetic';
 
   // 座位圓：品牌色，無邊框，白字
@@ -715,10 +769,10 @@ function drawTable(t, cx, cy) {
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.fillStyle = '#fffffd';
-    ctx.font = 'bold ' + Math.round(sR * 0.88) + 'px Chiron GoRound TC,Noto Sans TC,sans-serif';
+    ctx.font = 'bold ' + Math.round(sR * 0.92) + 'px Chiron GoRound TC,Noto Sans TC,sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(g.name.slice(0, 1), sx, sy + 0.5);
+    ctx.fillText(g.name.slice(0, 1), sx, sy);
     ctx.textBaseline = 'alphabetic';
   });
 
@@ -754,7 +808,8 @@ function lpanel(t) {
   var reask  = t.guests.filter(function(g){ return g.status==='🔄'; }).length;
 
   var rows = t.guests.map(function(g, i){
-    return '<div class="g-row">'
+    return '<div class="g-row" draggable="true" data-action="drag-row" data-id="'+t.id+'" data-idx="'+i+'">'
+      +'<span class="drag-handle" title="拖移排序">⠿</span>'
       +'<button class="g-status" data-action="toggle-status" data-id="'+t.id+'" data-idx="'+i+'" title="切換狀態">'+(g.status||'❓')+'</button>'
       +'<span class="g-name">'+g.name+'</span>'
       +'<span class="badge '+(g.side==='g'?'g':'b')+'">'+(g.side==='g'?'男':'女')+'</span>'
@@ -782,7 +837,7 @@ function lpanel(t) {
       :'<div class="no-cake-hint">點 🎁 指定哪位賓客領喜餅</div>')
     +'<div class="add-row">'
       +'<input class="gi" id="gin_'+t.id+'" type="text" placeholder="賓客姓名" data-action="guest-input" data-id="'+t.id+'"/>'
-      +'<select id="gis_'+t.id+'"><option value="g"'+(t.zone==='bride'?'':'  selected')+'>男方</option><option value="b"'+(t.zone==='bride'?' selected':'')+'>女方</option></select>'
+      +'<select id="gis_'+t.id+'"><option value="g">男方</option><option value="b">女方</option></select>'
       +'<select id="giv_'+t.id+'"><option value="0">葷食</option><option value="1">素食</option></select>'
       +'<button class="add-g-btn" data-action="add-guest" data-id="'+t.id+'">+ 加入</button>'
     +'</div>'
