@@ -161,9 +161,15 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 .lp-sub{font-size:11px;color:var(--muted);margin-top:2px;}
 .lp-del{font-family:var(--font);font-size:12px;color:var(--hint);border:1px solid var(--rule-md);background:none;cursor:pointer;padding:3px 8px;border-radius:6px;white-space:nowrap;}
 .lp-del:hover{color:#c0392b;background:#fdecea;border-color:#f09595;}
-.g-rows{border-top:1px solid var(--rule);margin-bottom:8px;}
-.g-row{display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid var(--rule);}
-.g-row:last-child{border-bottom:none;}
+
+/* ── 拖曳狀態樣式 ── */
+.g-rows{border-top:1px solid var(--rule);margin-bottom:8px;min-height:30px;transition: background-color 0.2s;}
+.g-rows.drag-over{background-color: rgba(58, 89, 145, 0.08); border-radius: 6px;}
+
+.g-row{display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid var(--rule);background:#fffffd;transition: opacity 0.15s;}
+.g-row.dragging{opacity: 0.4; background: var(--linen);}
+.g-row.drag-over-row{border-top: 2px solid var(--brown);}
+
 .g-name{flex:1;font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .12s;}
 .g-name:hover{background:var(--linen);color:var(--text);}
 .g-name-input{flex:1;font-family:var(--font);font-size:13px;padding:2px 6px;border:1.5px solid var(--brown);border-radius:5px;background:#fff;color:var(--text);outline:none;min-width:0;}
@@ -211,7 +217,6 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 </head>
 <body>
 
-<!-- Decorations -->
 <img class="deco deco-tl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-1.svg" alt="">
 <img class="deco deco-tr" src="https://ik.imagekit.io/itssaturday/other/Abby/1-2.svg" alt="">
 <img class="deco deco-bl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-3.svg" alt="">
@@ -242,7 +247,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 </div>
 <div class="status-legend">
   出席狀態：<span>✅ 確認出席</span> <span>❓ 待確認</span> <span>🔄 還要再問</span>
-  <span style="font-size:10px;color:var(--hint)">（清單視圖中點狀態圖示切換；點賓客姓名可編輯）</span>
+  <span style="font-size:10px;color:var(--hint)">（清單視圖中可跨桌拖曳賓客調位；點狀態圖示切換；點賓客姓名可編輯）</span>
 </div>
 
 <div class="tabs">
@@ -299,9 +304,13 @@ function startRealtimeSync() {
       isSyncing = true;
       TABLES = doc.data().tables;
       TABLE_POS = doc.data().positions || {};
-      // CANVAS_Z 是畫布渲染順序（Z-index），與 TABLES 陣列順序分開
       CANVAS_Z  = doc.data().canvasZ  || [];
-      NID = doc.data().nid || (TABLES.reduce(function(m,t){ return Math.max(m,t.id); }, 0) + 1);
+      // 修正高機率發生 ID 重複衝突的 Bug：從雲端嚴格同步最新 NID，若無才行計算
+      if (doc.data().nid) {
+        NID = doc.data().nid;
+      } else {
+        NID = Math.max(TABLES.reduce(function(m,t){ return Math.max(m,t.id); }, 0) + 1, NID);
+      }
       render();
       showSync('已同步 ✓', '#639922');
       setTimeout(function(){ isSyncing = false; }, 600);
@@ -330,12 +339,7 @@ var NID  = 10;
 var ZL   = { main:'主桌', groom:'男方區', bride:'女方區' };
 var ZC   = { main:'#E8A830', groom:'#3a5991', bride:'#E8A0B0' };
 var STATUS_CYCLE = ['❓','✅','🔄'];
-
-// TABLE_POS: {id: {x, y}} 畫布上的座標
 var TABLE_POS = {};
-
-// CANVAS_Z: 畫布渲染順序陣列（只存 id），與 TABLES 順序完全獨立
-// 越後面的 id 越晚渲染（顯示在上層）
 var CANVAS_Z = [];
 
 var TABLES = [
@@ -358,21 +362,22 @@ var TABLES = [
   ]},
 ];
 
+// ── Drag & Drop State ──
+var dragSrcTableId = null;
+var dragSrcGuestIdx = null;
+
 // ── CANVAS_Z helpers ─────────────────────────────────────────────────────────
-// 確保 CANVAS_Z 包含所有 TABLES 的 id（新增的桌子自動加入）
 function syncCanvasZ() {
   var existing = {};
   CANVAS_Z.forEach(function(id){ existing[id] = true; });
   TABLES.forEach(function(t){
     if (!existing[t.id]) { CANVAS_Z.push(t.id); existing[t.id] = true; }
   });
-  // 移除已刪除的桌子
   CANVAS_Z = CANVAS_Z.filter(function(id){
     return TABLES.some(function(t){ return t.id === id; });
   });
 }
 
-// 依 CANVAS_Z 順序取得渲染用的桌子列表（不影響 TABLES 本身）
 function getTablesForCanvas() {
   syncCanvasZ();
   return CANVAS_Z.map(function(id){
@@ -409,8 +414,6 @@ document.addEventListener('mouseout', function(e) {
 // ── Event delegation ─────────────────────────────────────────────────────────
 document.addEventListener('click', function(e) {
   var el = e.target;
-
-  // 若正在編輯名字，點其他地方會由 blur 處理，不要攔截
   if (el.classList.contains('g-name-input')) return;
 
   for (var i = 0; i < 6; i++) {
@@ -444,18 +447,15 @@ document.addEventListener('compositionend',   function() { isComposing = false; 
 document.addEventListener('keydown', function(e) {
   if (isComposing) return;
   if (e.key === 'Enter') {
-    // 新增賓客輸入框
     if (e.target.dataset.action === 'guest-input') {
       addGuest(+e.target.dataset.id);
       return;
     }
-    // 賓客姓名編輯框 Enter 確認
     if (e.target.classList.contains('g-name-input')) {
       e.target.blur();
       return;
     }
   }
-  // 賓客姓名編輯框 Escape 取消
   if (e.key === 'Escape' && e.target.classList.contains('g-name-input')) {
     e.target.dataset.cancelled = '1';
     e.target.blur();
@@ -463,7 +463,6 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// 全域 Enter 新增桌子（桌名輸入框）
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !isComposing && e.target.id === 'tn') {
     addTable();
@@ -472,7 +471,6 @@ document.addEventListener('keydown', function(e) {
 
 // ── 賓客姓名行內編輯 ─────────────────────────────────────────────────────────
 function startEditGuestName(tid, idx) {
-  // 找到對應 DOM span，替換為 input
   var span = document.querySelector(
     '.g-name[data-action="edit-guest-name"][data-id="'+tid+'"][data-idx="'+idx+'"]'
   );
@@ -493,7 +491,6 @@ function startEditGuestName(tid, idx) {
 
   input.addEventListener('blur', function() {
     if (input.dataset.cancelled === '1') {
-      // 取消：還原原本名字
       renderList();
       return;
     }
@@ -536,13 +533,10 @@ function doToggleStatus(id, idx) {
   render(); saveToFirebase();
 }
 
-// ── 桌子排序（僅影響 TABLES 陣列，與 CANVAS_Z 完全分開） ────────────────────
 function doMoveTable(id, dir) {
-  // 找出同 zone 的桌子，在 TABLES 中的實際位置
   var t = TABLES.find(function(t){ return t.id === id; });
   if (!t) return;
   var zone = t.zone;
-  // 同 zone 桌子在 TABLES 中的 indices
   var zoneIndices = [];
   TABLES.forEach(function(tbl, i){ if (tbl.zone === zone) zoneIndices.push(i); });
   var posInZone = zoneIndices.findIndex(function(i){ return TABLES[i].id === id; });
@@ -551,7 +545,6 @@ function doMoveTable(id, dir) {
 
   var idxA = zoneIndices[posInZone];
   var idxB = zoneIndices[targetInZone];
-  // swap in TABLES
   var tmp = TABLES[idxA];
   TABLES[idxA] = TABLES[idxB];
   TABLES[idxB] = tmp;
@@ -567,7 +560,7 @@ function addTable() {
   if (!name) { document.getElementById('tn').focus(); return; }
   var newId = NID++;
   TABLES.push({id:newId, name:name, label:label, seats:seats, zone:zone, guests:[]});
-  CANVAS_Z.push(newId); // 新桌加到畫布最頂層
+  CANVAS_Z.push(newId);
   document.getElementById('tn').value = '';
   document.getElementById('tl').value = '';
   render(); saveToFirebase();
@@ -596,6 +589,90 @@ function setView(v) {
   document.getElementById('tab-list').className  = 'tab'+(v==='list' ?' active':'');
   render();
 }
+
+// ── List Drag & Drop Handlers ────────────────────────────────────────────────
+function handleDragStart(e, tableId, idx) {
+  dragSrcTableId = tableId;
+  dragSrcGuestIdx = idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', ''); // Firefox 相容所需
+}
+
+function handleDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.g-rows').forEach(el => el.classList.remove('drag-over'));
+  document.querySelectorAll('.g-row').forEach(el => el.classList.remove('drag-over-row'));
+}
+
+function handleDragOver(e) {
+  if (e.preventDefault) e.preventDefault();
+  return false;
+}
+
+function handleDragEnterRow(e) {
+  e.currentTarget.classList.add('drag-over-row');
+}
+
+function handleDragLeaveRow(e) {
+  e.currentTarget.classList.remove('drag-over-row');
+}
+
+function handleDragEnterZone(e) {
+  e.currentTarget.classList.add('drag-over');
+}
+
+function handleDragLeaveZone(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+// 放開至整桌區域（移動至該桌末尾）
+function handleDropZone(e, targetTableId) {
+  e.stopPropagation();
+  if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
+  
+  // 如果是同一桌內拖移到空白處，不作動作 (或交由 row swap 處理)
+  if (dragSrcTableId === targetTableId) return;
+
+  var srcTable = TABLES.find(t => t.id === dragSrcTableId);
+  var targetTable = TABLES.find(t => t.id === targetTableId);
+  
+  if (!srcTable || !targetTable) return;
+  if (targetTable.guests.length >= targetTable.seats) {
+    alert('「' + targetTable.name + '」座位已滿，無法移入！');
+    return;
+  }
+
+  // 移出並加入新桌
+  var [movingGuest] = srcTable.guests.splice(dragSrcGuestIdx, 1);
+  targetTable.guests.push(movingGuest);
+
+  dragSrcTableId = null; dragSrcGuestIdx = null;
+  render(); saveToFirebase();
+}
+
+// 放開至另一個賓客上（兩座位互相交換 Swap）
+function handleDropRow(e, targetTableId, targetIdx) {
+  e.stopPropagation();
+  if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
+
+  var srcTable = TABLES.find(t => t.id === dragSrcTableId);
+  var targetTable = TABLES.find(t => t.id === targetTableId);
+
+  if (!srcTable || !targetTable) return;
+
+  // 同桌同位置放開不處理
+  if (dragSrcTableId === targetTableId && dragSrcGuestIdx === targetIdx) return;
+
+  // 兩賓客交換資料
+  var temp = srcTable.guests[dragSrcGuestIdx];
+  srcTable.guests[dragSrcGuestIdx] = targetTable.guests[targetIdx];
+  targetTable.guests[targetIdx] = temp;
+
+  dragSrcTableId = null; dragSrcGuestIdx = null;
+  render(); saveToFirebase();
+}
+
 
 // ── SVG round table ──────────────────────────────────────────────────────────
 function drawSVG(t, sz) {
@@ -708,7 +785,6 @@ function canvasXY(e) {
   return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
 }
 
-// hitTest 依 CANVAS_Z 由後往前（由上層往下層）
 function hitTest(mx, my) {
   syncCanvasZ();
   for (var i = CANVAS_Z.length - 1; i >= 0; i--) {
@@ -731,8 +807,6 @@ function onMouseDown(e) {
     dragOffX = p.x - pos.x;
     dragOffY = p.y - pos.y;
     canvas.classList.add('dragging');
-    // 將點中的桌子移到 CANVAS_Z 最頂層（顯示在最上面）
-    // ★ 這裡只改 CANVAS_Z，不影響 TABLES 陣列的順序
     var cidx = CANVAS_Z.indexOf(t.id);
     if (cidx !== -1) {
       CANVAS_Z.splice(cidx, 1);
@@ -775,11 +849,9 @@ function drawCanvas() {
   if (!ctx) return;
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Background
   ctx.fillStyle = '#fdfaf5';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Stage
   ctx.fillStyle = '#f5ecd8';
   ctx.fillRect(0, 0, CANVAS_W, 44);
   ctx.strokeStyle = '#d6b777';
@@ -790,14 +862,12 @@ function drawCanvas() {
   ctx.textAlign = 'center';
   ctx.fillText('✦  舞台 / 主持區  ✦', CANVAS_W/2, 27);
 
-  // Centre divider
   ctx.strokeStyle = '#ddd5cc';
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 4]);
   ctx.beginPath(); ctx.moveTo(CANVAS_W/2, 44); ctx.lineTo(CANVAS_W/2, CANVAS_H); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Zone labels
   ctx.font = '11px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.fillStyle = '#9a8878';
   ctx.textAlign = 'left';
@@ -805,7 +875,6 @@ function drawCanvas() {
   ctx.textAlign = 'right';
   ctx.fillText('女方賓客區 ▶', CANVAS_W - 14, CANVAS_H - 12);
 
-  // 依 CANVAS_Z 順序渲染（不改 TABLES 陣列）
   var orderedTables = getTablesForCanvas();
   orderedTables.forEach(function(t) {
     var p = TABLE_POS[t.id] || getPos(t);
@@ -882,7 +951,6 @@ function drawTable(t, cx, cy) {
 
 function renderFloor() {
   if (!canvas) initCanvas();
-  if (!ctx) { initCanvas(); }
   if (!canvas) return;
   drawCanvas();
 }
@@ -894,15 +962,21 @@ function lpanel(t, zoneList) {
   var pend   = t.guests.filter(function(g){ return g.status==='❓' || !g.status; }).length;
   var reask  = t.guests.filter(function(g){ return g.status==='🔄'; }).length;
 
-  // 在同 zone 的列表中的位置
   var posInZone = zoneList.findIndex(function(x){ return x.id === t.id; });
   var isFirst = posInZone === 0;
   var isLast  = posInZone === zoneList.length - 1;
 
+  // 動態綁定 HTML5 拖曳屬性與事件監聽器
   var rows = t.guests.map(function(g, i){
-    return '<div class="g-row">'
+    return '<div class="g-row" draggable="true" '
+      +'ondragstart="handleDragStart(event, '+t.id+', '+i+')" '
+      +'ondragend="handleDragEnd(event)" '
+      +'ondragover="handleDragOver(event)" '
+      +'ondragenter="handleDragEnterRow(event)" '
+      +'ondragleave="handleDragLeaveRow(event)" '
+      +'ondrop="handleDropRow(event, '+t.id+', '+i+')">'
       +'<button class="g-status" data-action="toggle-status" data-id="'+t.id+'" data-idx="'+i+'" title="切換狀態">'+(g.status||'❓')+'</button>'
-      +'<span class="g-name" data-action="edit-guest-name" data-id="'+t.id+'" data-idx="'+i+'" title="點擊編輯名字">'+g.name+'</span>'
+      +'<span class="g-name" data-action="edit-guest-name" data-id="'+t.id+'" data-idx="'+i+'" title="點擊編輯名字（可長按拖曳）">'+g.name+'</span>'
       +'<span class="badge '+(g.side==='g'?'g':'b')+'">'+(g.side==='g'?'男':'女')+'</span>'
       +(g.veg?'<span class="badge v">素</span>':'')
       +'<button class="cake-tog'+(g.cake?' on':'')+'" data-action="toggle-cake" data-id="'+t.id+'" data-idx="'+i+'" title="指定喜餅">🎁</button>'
@@ -927,7 +1001,13 @@ function lpanel(t, zoneList) {
         +'<button class="lp-del" data-action="del-table" data-id="'+t.id+'">刪除桌子</button>'
       +'</div>'
     +'</div>'
-    +'<div class="g-rows">'+(rows||'<div style="font-size:12px;color:var(--hint);padding:6px 0">尚無賓客</div>')+'</div>'
+    // 綁定容器 Drop 事件，若放開在空白處則視為直接移動至該桌末尾
+    +'<div class="g-rows" ondragover="handleDragOver(event)" '
+      +'ondragenter="handleDragEnterZone(event)" '
+      +'ondragleave="handleDragLeaveZone(event)" '
+      +'ondrop="handleDropZone(event, '+t.id+')">'
+      +(rows||'<div style="font-size:12px;color:var(--hint);padding:6px 0;text-align:center;">尚無賓客 (可將人拖曳至此)</div>')
+    +'</div>'
     +'<div class="status-tally">✅'+conf+' ❓'+pend+' 🔄'+reask+'</div>'
     +(cakes.length
       ?'<div class="cake-summary">🎁 喜餅 '+cakes.length+' 份・'+cakes.map(function(g){ return g.name; }).join('、')+'</div>'
@@ -987,14 +1067,14 @@ function exportTxt() {
   var ck = TABLES.reduce(function(a,t){ return a+t.guests.filter(function(g){ return g.cake; }).length; },0);
   var cf = TABLES.reduce(function(a,t){ return a+t.guests.filter(function(g){ return g.status==='✅'; }).length; },0);
   var txt = 'Abby & Johnny 婚宴桌位規劃表\n'+'='.repeat(36)+'\n';
-  txt += '總桌數：'+TABLES.length+'　總賓客：'+tg+'　確認：'+cf+'人　素食：'+vg+'人　喜餅：'+ck+'份\n\n';
+  txt += '總桌數：'+TABLES.length+' 總賓客：'+tg+' 確認：'+cf+'人 素食：'+vg+'人 喜餅：'+ck+'份\n\n';
   TABLES.forEach(function(t){
     var cakes = t.guests.filter(function(g){ return g.cake; });
     var veg   = t.guests.filter(function(g){ return g.veg; }).length;
-    txt += '【'+t.name+'】'+(t.label?'（'+t.label+'）':'')+ZL[t.zone]+'　'+t.guests.length+'/'+t.seats+'人\n';
+    txt += '【'+t.name+'】'+(t.label?'（'+t.label+'）':'')+ZL[t.zone]+' '+t.guests.length+'/'+t.seats+'人\n';
     txt += '  喜餅 '+cakes.length+'份';
     if (cakes.length) txt += '，由 '+cakes.map(function(g){ return g.name; }).join('、')+' 領取';
-    if (veg) txt += '　素食 '+veg+'人';
+    if (veg) txt += ' 素食 '+veg+'人';
     txt += '\n';
     t.guests.forEach(function(g){
       txt += '  '+(g.status||'❓')+' '+g.name+'（'+(g.side==='g'?'男方':'女方')+(g.veg?' ★素食':'')+(g.cake?' 🎁':'')+'）\n';
