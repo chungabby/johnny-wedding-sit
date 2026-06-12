@@ -225,7 +225,6 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 </head>
 <body>
 
-<!-- Decorations -->
 <img class="deco deco-tl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-1.svg" alt="">
 <img class="deco deco-tr" src="https://ik.imagekit.io/itssaturday/other/Abby/1-2.svg" alt="">
 <img class="deco deco-bl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-3.svg" alt="">
@@ -583,7 +582,6 @@ function addGuest(tid) {
   if (!name) { n.focus(); return; }
   var t = TABLES.find(function(t){ return t.id === tid; });
   if (!t) return;
-  // 拿掉「只能放上限人數」的硬性阻擋限制，改為允許自由加入，僅作紅字警告
   t.guests.push({name:name, side:s.value, veg:v.value==='1', cake:false, status:'❓'});
   n.value = ''; n.focus();
   render(); saveToFirebase();
@@ -634,7 +632,6 @@ function handleDragLeaveZone(e) {
   e.currentTarget.classList.remove('drag-over');
 }
 
-// 情況 A：放開至空白區域 -> 安插到該桌的最後面
 function handleDropZone(e, targetTableId) {
   e.stopPropagation();
   if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
@@ -643,17 +640,13 @@ function handleDropZone(e, targetTableId) {
   var targetTable = TABLES.find(t => t.id === targetTableId);
   if (!srcTable || !targetTable) return;
 
-  // 抽出被拖曳的賓客
   var [movingGuest] = srcTable.guests.splice(dragSrcGuestIdx, 1);
-  
-  // 塞入目標桌的最尾端
   targetTable.guests.push(movingGuest);
 
   dragSrcTableId = null; dragSrcGuestIdx = null;
   render(); saveToFirebase();
 }
 
-// 情況 B：直接放開在另一個賓客上 -> 安插在該賓客的「前方位置」
 function handleDropRow(e, targetTableId, targetIdx) {
   e.stopPropagation();
   if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
@@ -662,17 +655,9 @@ function handleDropRow(e, targetTableId, targetIdx) {
   var targetTable = TABLES.find(t => t.id === targetTableId);
   if (!srcTable || !targetTable) return;
 
-  // 先抽出原位置的賓客
   var [movingGuest] = srcTable.guests.splice(dragSrcGuestIdx, 1);
 
-  // 如果是在同一桌內往前或往後安插，需要校正安插陣列索引
   var insertIdx = targetIdx;
-  if (dragSrcTableId === targetTableId && dragSrcGuestIdx < targetIdx) {
-    // 如果是同桌從前面往後面插，因為前面少了一個人，索引值要減 1 才是正確的相對位置
-    insertIdx = targetIdx; 
-  }
-
-  // 安插至目標位置
   targetTable.guests.splice(insertIdx, 0, movingGuest);
 
   dragSrcTableId = null; dragSrcGuestIdx = null;
@@ -687,7 +672,6 @@ function drawSVG(t, sz) {
   var zc = ZC[t.zone] || '#888';
   var nodes = [];
 
-  // 如果實際人數超出設定座位數，畫布圓桌也動態調整顯示節點數，避免遺漏
   var totalRenderSeats = Math.max(t.seats, t.guests.length);
 
   for (var i = 0; i < totalRenderSeats; i++) {
@@ -865,7 +849,8 @@ function drawCanvas() {
   ctx.fillRect(0, 0, CANVAS_W, 44);
   ctx.strokeStyle = '#d6b777';
   ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0,44); ctx.lineTo(CANVAS_W,44); stroke();
+  // ★ 核心修復：補回 ctx.stroke() 確保畫布不再因為筆誤爆掉崩潰
+  ctx.beginPath(); ctx.moveTo(0,44); ctx.lineTo(CANVAS_W,44); ctx.stroke();
   ctx.fillStyle = '#88794e';
   ctx.font = '500 12px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.textAlign = 'center';
@@ -901,7 +886,6 @@ function drawTable(t, cx, cy) {
   var sR  = R * 0.26;
   var dist = R + sR + 5;
 
-  // 畫布偵測：如果人數超額，圓桌邊框變深色提醒
   var isOverLimit = t.guests.length > t.seats;
 
   ctx.beginPath();
@@ -984,7 +968,6 @@ function lpanel(t, zoneList) {
   var isFirst = posInZone === 0;
   var isLast  = posInZone === zoneList.length - 1;
 
-  // 判斷是否超額
   var isOverLimit = t.guests.length > t.seats;
 
   var rows = t.guests.map(function(g, i){
@@ -1012,7 +995,6 @@ function lpanel(t, zoneList) {
           +(isOverLimit ? '<span class="badge warn">⚠️ 超額併桌</span>' : '')
         +'</div>'
         +(t.label?'<div class="lp-label">'+t.label+'</div>':'')
-        // 超額時動態套用過量樣式 (.overlimit)
         +'<div class="lp-sub '+(isOverLimit?'overlimit':'')+'">'+t.guests.length+'/'+t.seats+' 人</div>'
       +'</div>'
       +'<div class="lp-hdr-right">'
