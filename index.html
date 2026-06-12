@@ -100,6 +100,13 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 .badge.b{background:var(--bride-l);color:var(--bride-d);}
 .badge.v{background:var(--veg-l);color:var(--veg-d);}
 .badge.m{background:var(--main-l);color:var(--main-d);}
+.badge.warn{background:#fdecea;color:#c0392b;border:1px solid #f09595;animation: pulse 2s infinite;}
+
+@keyframes pulse {
+  0% { opacity: 0.9; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.9; }
+}
 
 /* ── Add toolbar ── */
 .add-tbar{background:#fffffd;border:1px dashed var(--brown);border-radius:var(--rl);padding:10px 14px;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
@@ -159,6 +166,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 .lp-name{font-size:13px;font-weight:700;}
 .lp-label{font-size:11px;color:var(--muted);font-style:italic;margin-top:2px;}
 .lp-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+.lp-sub.overlimit{color: #c0392b; font-weight: bold;}
 .lp-del{font-family:var(--font);font-size:12px;color:var(--hint);border:1px solid var(--rule-md);background:none;cursor:pointer;padding:3px 8px;border-radius:6px;white-space:nowrap;}
 .lp-del:hover{color:#c0392b;background:#fdecea;border-color:#f09595;}
 
@@ -168,7 +176,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 
 .g-row{display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid var(--rule);background:#fffffd;transition: opacity 0.15s;}
 .g-row.dragging{opacity: 0.4; background: var(--linen);}
-.g-row.drag-over-row{border-top: 2px solid var(--brown);}
+.g-row.drag-over-row{border-top: 3px solid var(--brown); box-shadow: 0 -2px 4px rgba(0,0,0,0.05);}
 
 .g-name{flex:1;font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .12s;}
 .g-name:hover{background:var(--linen);color:var(--text);}
@@ -217,6 +225,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 </head>
 <body>
 
+<!-- Decorations -->
 <img class="deco deco-tl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-1.svg" alt="">
 <img class="deco deco-tr" src="https://ik.imagekit.io/itssaturday/other/Abby/1-2.svg" alt="">
 <img class="deco deco-bl" src="https://ik.imagekit.io/itssaturday/other/Abby/1-3.svg" alt="">
@@ -247,7 +256,7 @@ body{font-family:var(--font);background:var(--page);color:var(--text);min-height
 </div>
 <div class="status-legend">
   出席狀態：<span>✅ 確認出席</span> <span>❓ 待確認</span> <span>🔄 還要再問</span>
-  <span style="font-size:10px;color:var(--hint)">（清單視圖中可跨桌拖曳賓客調位；點狀態圖示切換；點賓客姓名可編輯）</span>
+  <span style="font-size:10px;color:var(--hint)">（清單編輯中，拖移賓客可「直接安插」至目標位置，超額時會出現紅字警告）</span>
 </div>
 
 <div class="tabs">
@@ -305,7 +314,6 @@ function startRealtimeSync() {
       TABLES = doc.data().tables;
       TABLE_POS = doc.data().positions || {};
       CANVAS_Z  = doc.data().canvasZ  || [];
-      // 修正高機率發生 ID 重複衝突的 Bug：從雲端嚴格同步最新 NID，若無才行計算
       if (doc.data().nid) {
         NID = doc.data().nid;
       } else {
@@ -575,7 +583,7 @@ function addGuest(tid) {
   if (!name) { n.focus(); return; }
   var t = TABLES.find(function(t){ return t.id === tid; });
   if (!t) return;
-  if (t.guests.length >= t.seats) { alert('座位已滿！'); return; }
+  // 拿掉「只能放上限人數」的硬性阻擋限制，改為允許自由加入，僅作紅字警告
   t.guests.push({name:name, side:s.value, veg:v.value==='1', cake:false, status:'❓'});
   n.value = ''; n.focus();
   render(); saveToFirebase();
@@ -590,13 +598,13 @@ function setView(v) {
   render();
 }
 
-// ── List Drag & Drop Handlers ────────────────────────────────────────────────
+// ── List Drag & Drop Handlers (安插模式) ──────────────────────────────────────
 function handleDragStart(e, tableId, idx) {
   dragSrcTableId = tableId;
   dragSrcGuestIdx = idx;
   e.currentTarget.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', ''); // Firefox 相容所需
+  e.dataTransfer.setData('text/plain', '');
 }
 
 function handleDragEnd(e) {
@@ -626,48 +634,46 @@ function handleDragLeaveZone(e) {
   e.currentTarget.classList.remove('drag-over');
 }
 
-// 放開至整桌區域（移動至該桌末尾）
+// 情況 A：放開至空白區域 -> 安插到該桌的最後面
 function handleDropZone(e, targetTableId) {
   e.stopPropagation();
   if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
   
-  // 如果是同一桌內拖移到空白處，不作動作 (或交由 row swap 處理)
-  if (dragSrcTableId === targetTableId) return;
-
   var srcTable = TABLES.find(t => t.id === dragSrcTableId);
   var targetTable = TABLES.find(t => t.id === targetTableId);
-  
   if (!srcTable || !targetTable) return;
-  if (targetTable.guests.length >= targetTable.seats) {
-    alert('「' + targetTable.name + '」座位已滿，無法移入！');
-    return;
-  }
 
-  // 移出並加入新桌
+  // 抽出被拖曳的賓客
   var [movingGuest] = srcTable.guests.splice(dragSrcGuestIdx, 1);
+  
+  // 塞入目標桌的最尾端
   targetTable.guests.push(movingGuest);
 
   dragSrcTableId = null; dragSrcGuestIdx = null;
   render(); saveToFirebase();
 }
 
-// 放開至另一個賓客上（兩座位互相交換 Swap）
+// 情況 B：直接放開在另一個賓客上 -> 安插在該賓客的「前方位置」
 function handleDropRow(e, targetTableId, targetIdx) {
   e.stopPropagation();
   if (dragSrcTableId === null || dragSrcGuestIdx === null) return;
 
   var srcTable = TABLES.find(t => t.id === dragSrcTableId);
   var targetTable = TABLES.find(t => t.id === targetTableId);
-
   if (!srcTable || !targetTable) return;
 
-  // 同桌同位置放開不處理
-  if (dragSrcTableId === targetTableId && dragSrcGuestIdx === targetIdx) return;
+  // 先抽出原位置的賓客
+  var [movingGuest] = srcTable.guests.splice(dragSrcGuestIdx, 1);
 
-  // 兩賓客交換資料
-  var temp = srcTable.guests[dragSrcGuestIdx];
-  srcTable.guests[dragSrcGuestIdx] = targetTable.guests[targetIdx];
-  targetTable.guests[targetIdx] = temp;
+  // 如果是在同一桌內往前或往後安插，需要校正安插陣列索引
+  var insertIdx = targetIdx;
+  if (dragSrcTableId === targetTableId && dragSrcGuestIdx < targetIdx) {
+    // 如果是同桌從前面往後面插，因為前面少了一個人，索引值要減 1 才是正確的相對位置
+    insertIdx = targetIdx; 
+  }
+
+  // 安插至目標位置
+  targetTable.guests.splice(insertIdx, 0, movingGuest);
 
   dragSrcTableId = null; dragSrcGuestIdx = null;
   render(); saveToFirebase();
@@ -681,8 +687,11 @@ function drawSVG(t, sz) {
   var zc = ZC[t.zone] || '#888';
   var nodes = [];
 
-  for (var i = 0; i < t.seats; i++) {
-    var ang  = (i / t.seats) * 2 * Math.PI - Math.PI/2;
+  // 如果實際人數超出設定座位數，畫布圓桌也動態調整顯示節點數，避免遺漏
+  var totalRenderSeats = Math.max(t.seats, t.guests.length);
+
+  for (var i = 0; i < totalRenderSeats; i++) {
+    var ang  = (i / totalRenderSeats) * 2 * Math.PI - Math.PI/2;
     var dist = tR + sR + 4;
     var x    = (cx + dist * Math.cos(ang)).toFixed(1);
     var y    = (cy + dist * Math.sin(ang)).toFixed(1);
@@ -724,7 +733,7 @@ function renderStats() {
   var vg = TABLES.reduce(function(a,t){ return a+t.guests.filter(function(g){ return g.veg; }).length; },0);
   var ck = TABLES.reduce(function(a,t){ return a+t.guests.filter(function(g){ return g.cake; }).length; },0);
   var cf = TABLES.reduce(function(a,t){ return a+t.guests.filter(function(g){ return g.status==='✅'; }).length; },0);
-  var em = TABLES.reduce(function(a,t){ return a+(t.seats-t.guests.length); },0);
+  var em = TABLES.reduce(function(a,t){ return a+Math.max(0, t.seats-t.guests.length); },0);
   document.getElementById('stats').innerHTML =
     sc('桌數',TABLES.length,'')+
     sc('總賓客',tg,'')+
@@ -856,7 +865,7 @@ function drawCanvas() {
   ctx.fillRect(0, 0, CANVAS_W, 44);
   ctx.strokeStyle = '#d6b777';
   ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0,44); ctx.lineTo(CANVAS_W,44); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,44); ctx.lineTo(CANVAS_W,44); stroke();
   ctx.fillStyle = '#88794e';
   ctx.font = '500 12px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.textAlign = 'center';
@@ -892,12 +901,20 @@ function drawTable(t, cx, cy) {
   var sR  = R * 0.26;
   var dist = R + sR + 5;
 
+  // 畫布偵測：如果人數超額，圓桌邊框變深色提醒
+  var isOverLimit = t.guests.length > t.seats;
+
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.fillStyle = zf;
   ctx.fill();
+  if (isOverLimit) {
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
 
-  ctx.fillStyle = ztx;
+  ctx.fillStyle = isOverLimit ? '#c0392b' : ztx;
   ctx.font = 'bold 11px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -909,15 +926,16 @@ function drawTable(t, cx, cy) {
     ctx.fillText(t.label, cx, cy + 4);
   }
 
-  ctx.fillStyle = ztx + 'aa';
-  ctx.font = '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
+  ctx.fillStyle = isOverLimit ? '#c0392b' : (ztx + 'aa');
+  ctx.font = isOverLimit ? 'bold 9px Chiron GoRound TC,Noto Sans TC,sans-serif' : '9px Chiron GoRound TC,Noto Sans TC,sans-serif';
   ctx.fillText(t.guests.length + '/' + t.seats + ' 人', cx, t.label ? cy + 15 : cy + 8);
   ctx.textBaseline = 'alphabetic';
 
   var GC = { groom:'#3a5991', bride:'#c79483', veg:'#88794e' };
+  var totalRenderSeats = Math.max(t.seats, t.guests.length);
 
   t.guests.forEach(function(g, i) {
-    var ang  = (i / t.seats) * Math.PI * 2 - Math.PI / 2;
+    var ang  = (i / totalRenderSeats) * Math.PI * 2 - Math.PI / 2;
     var sx   = cx + dist * Math.cos(ang);
     var sy   = cy + dist * Math.sin(ang);
     var fill = g.veg ? GC.veg : (g.side === 'g' ? GC.groom : GC.bride);
@@ -934,7 +952,7 @@ function drawTable(t, cx, cy) {
   });
 
   for (var i = t.guests.length; i < t.seats; i++) {
-    var ang = (i / t.seats) * Math.PI * 2 - Math.PI / 2;
+    var ang = (i / totalRenderSeats) * Math.PI * 2 - Math.PI / 2;
     var sx  = cx + dist * Math.cos(ang);
     var sy  = cy + dist * Math.sin(ang);
     ctx.beginPath();
@@ -966,7 +984,9 @@ function lpanel(t, zoneList) {
   var isFirst = posInZone === 0;
   var isLast  = posInZone === zoneList.length - 1;
 
-  // 動態綁定 HTML5 拖曳屬性與事件監聽器
+  // 判斷是否超額
+  var isOverLimit = t.guests.length > t.seats;
+
   var rows = t.guests.map(function(g, i){
     return '<div class="g-row" draggable="true" '
       +'ondragstart="handleDragStart(event, '+t.id+', '+i+')" '
@@ -976,7 +996,7 @@ function lpanel(t, zoneList) {
       +'ondragleave="handleDragLeaveRow(event)" '
       +'ondrop="handleDropRow(event, '+t.id+', '+i+')">'
       +'<button class="g-status" data-action="toggle-status" data-id="'+t.id+'" data-idx="'+i+'" title="切換狀態">'+(g.status||'❓')+'</button>'
-      +'<span class="g-name" data-action="edit-guest-name" data-id="'+t.id+'" data-idx="'+i+'" title="點擊編輯名字（可長按拖曳）">'+g.name+'</span>'
+      +'<span class="g-name" data-action="edit-guest-name" data-id="'+t.id+'" data-idx="'+i+'" title="點擊編輯名字（可長按拖曳移動）">'+g.name+'</span>'
       +'<span class="badge '+(g.side==='g'?'g':'b')+'">'+(g.side==='g'?'男':'女')+'</span>'
       +(g.veg?'<span class="badge v">素</span>':'')
       +'<button class="cake-tog'+(g.cake?' on':'')+'" data-action="toggle-cake" data-id="'+t.id+'" data-idx="'+i+'" title="指定喜餅">🎁</button>'
@@ -988,10 +1008,12 @@ function lpanel(t, zoneList) {
     +'<div class="lp-hdr">'
       +'<div>'
         +'<div class="lp-name">'+t.name
-          +' <span class="badge '+(t.zone==='groom'?'g':t.zone==='bride'?'b':'m')+'" style="font-size:9px">'+ZL[t.zone]+'</span>'
+          +' <span class="badge '+(t.zone==='groom'?'g':t.zone==='bride'?'b':'m')+'" style="font-size:9px">'+ZL[t.zone]+'</span> '
+          +(isOverLimit ? '<span class="badge warn">⚠️ 超額併桌</span>' : '')
         +'</div>'
         +(t.label?'<div class="lp-label">'+t.label+'</div>':'')
-        +'<div class="lp-sub">'+t.guests.length+'/'+t.seats+' 人</div>'
+        // 超額時動態套用過量樣式 (.overlimit)
+        +'<div class="lp-sub '+(isOverLimit?'overlimit':'')+'">'+t.guests.length+'/'+t.seats+' 人</div>'
       +'</div>'
       +'<div class="lp-hdr-right">'
         +'<div class="lp-order-btns">'
@@ -1001,7 +1023,6 @@ function lpanel(t, zoneList) {
         +'<button class="lp-del" data-action="del-table" data-id="'+t.id+'">刪除桌子</button>'
       +'</div>'
     +'</div>'
-    // 綁定容器 Drop 事件，若放開在空白處則視為直接移動至該桌末尾
     +'<div class="g-rows" ondragover="handleDragOver(event)" '
       +'ondragenter="handleDragEnterZone(event)" '
       +'ondragleave="handleDragLeaveZone(event)" '
